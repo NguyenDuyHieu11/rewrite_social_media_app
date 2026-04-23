@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -144,4 +145,56 @@ func (c *Config) validate() error {
 	}
 
 	return nil
+}
+
+func (c *Config) Redacted() map[string]any {
+	return map[string]any{
+		"app_env":                     c.AppEnv,
+		"log_level":                   c.LogLevel,
+		"postgres_dsn":                redactDSN(c.PostgresDSN),
+		"redis_addr":                  c.RedisAddr,
+		"redis_db":                    c.RedisDB,
+		"minio_endpoint":              c.MinIOEndpoint,
+		"minio_bucket":                c.MinIOBucket,
+		"minio_use_ssl":               c.MinIOUseSSL,
+		"jwt_secret":                  "[REDACTED]",
+		"jwt_access_ttl":              c.JWTAccessTTL.String(),
+		"jwt_refresh_ttl":             c.JWTRefreshTTL.String(),
+		"gateway_id":                  c.GatewayID,
+		"gateway_addr":                c.GatewayAddr,
+		"gateway_public_url":          c.GatewayPublicURL,
+		"dispatcher_addr":             c.DispatcherAddr,
+		"presence_heartbeat_interval": c.PresenceHeartbeatInterval.String(),
+		"presence_ttl":                c.PresenceTTL.String(),
+		"pubsub":                      c.PubSub,
+	}
+}
+
+// redactDSN masks the password part of a DSN like:
+// postgres://user:password@host:5432/db?sslmode=disable
+// -> postgres://user:****@host:5432/db?sslmode=disable
+//
+// If the DSN does not match this shape, it is returned unchanged.
+func redactDSN(dsn string) string {
+	schemeIdx := strings.Index(dsn, "://")
+	if schemeIdx == -1 {
+		return dsn
+	}
+
+	credStart := schemeIdx + 3
+	atIdx := strings.Index(dsn[credStart:], "@")
+	if atIdx == -1 {
+		return dsn
+	}
+
+	atIdx += credStart
+
+	colonIdx := strings.Index(dsn[credStart:atIdx], ":")
+	if colonIdx == -1 {
+		return dsn
+	}
+
+	colonIdx += credStart
+
+	return dsn[:colonIdx] + "***" + dsn[atIdx:]
 }
