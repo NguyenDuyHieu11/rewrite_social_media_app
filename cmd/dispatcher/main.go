@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/config"
+	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/db"
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/logger"
 )
 
@@ -29,6 +30,13 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	conn, err := db.NewPool(ctx, cfg.PostgresDSN)
+	if err != nil {
+		log.Error("connection to db fails", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
 
 	<-ctx.Done()
 
