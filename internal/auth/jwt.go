@@ -8,22 +8,31 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+var (
+	ErrInvalidToken = errors.New("invalid token")
+	ErrExpiredToken = errors.New("token expired")
+)
+
+// Claims is the JWT payload for access tokens. It embeds jwt.RegisteredClaims
+// (a struct) so it satisfies the jwt.Claims interface and can be passed to
+// jwt.NewWithClaims and jwt.ParseWithClaims.
 type Claims struct {
-	UserID               string `json:"user_id"`
-	Username             string `json:"username"`
-	Role                 string `json:"role"`
-	jwt.RegisteredClaims        // since i am embedding this type and this type already implemented those methods requrie by the root interface Claims, my own Claims interface now becomes the real Claims in jwt package. and the reason for both to coexist is go allow same name as long as they are in diff packages.
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
+	jwt.RegisteredClaims
 }
 
-func GeneratingToken(userId string, userName string, role string, secret []byte, ttl time.Duration) (string, error) {
+// GenerateAccessToken signs a short-lived HS256 access token.
+func GenerateAccessToken(userID, username, role string, secret []byte, ttl time.Duration) (string, error) {
 	now := time.Now()
 
 	claims := Claims{
-		UserID:   userId,
-		Username: userName,
+		UserID:   userID,
+		Username: username,
 		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   userId,
+			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
@@ -39,12 +48,13 @@ func GeneratingToken(userId string, userName string, role string, secret []byte,
 	return signed, nil
 }
 
-func ParseAccessToken(tokenToVerify string, secret []byte) (*Claims, error) {
-
-	claims := &Claims{}
-	parsed, err := jwt.ParseWithClaims( // return type *jwt.Token
-		tokenToVerify,
-		claims,
+// ParseAccessToken validates the signature, signing method, and expiry. It
+// returns package-local sentinels (ErrExpiredToken, ErrInvalidToken) so
+// callers don't need to import the jwt package to interpret failures.
+func ParseAccessToken(tokenString string, secret []byte) (*Claims, error) {
+	parsed, err := jwt.ParseWithClaims(
+		tokenString,
+		&Claims{},
 		func(t *jwt.Token) (any, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -52,16 +62,16 @@ func ParseAccessToken(tokenToVerify string, secret []byte) (*Claims, error) {
 			return secret, nil
 		},
 	)
-
 	if err != nil {
-		switch {
-		case errors.Is(err, jwt.ErrTokenExpired):
-			return nil, err
-		default:
-			return nil, fmt.Errorf("%w: %v", jwt.ErrTokenInvalidClaims, err)
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, ErrExpiredToken
 		}
-
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
 
-	return parsed.Claims.(*Claims), nil
+	claims, ok := parsed.Claims.(*Claims)
+	if !ok || !parsed.Valid {
+		return nil, ErrInvalidToken
+	}
+	return claims, nil
 }
