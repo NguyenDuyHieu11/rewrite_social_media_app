@@ -16,6 +16,8 @@ import (
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/httputil"
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/logger"
 	mw "github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/middleware"
+	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/pubsub"
+	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/redisclient"
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/repository"
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/services"
 
@@ -42,6 +44,37 @@ func main() {
 	// receives this ctx so they shut down together.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// ---- Redis + pub/sub (publish path; handlers will use this in later milestones) ----
+
+	var bus pubsub.PubSub
+	switch cfg.PubSub {
+	case config.PubSubRedis:
+		redisClient, err := redisclient.New(ctx, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+		if err != nil {
+			log.Error("failed to connect to redis", "error", err)
+			os.Exit(1)
+		}
+		defer redisClient.Close()
+
+		bus, err = pubsub.New(cfg.PubSub, redisClient)
+		if err != nil {
+			log.Error("failed to init pubsub", "error", err)
+			os.Exit(1)
+		}
+		defer bus.Close()
+
+		log.Info("redis and pubsub ready", "impl", cfg.PubSub)
+	case config.PubSubStreams:
+		var err error
+		bus, err = pubsub.New(cfg.PubSub, nil)
+		if err != nil {
+			log.Error("failed to init pubsub", "error", err)
+			os.Exit(1)
+		}
+		defer bus.Close()
+		log.Info("pubsub ready (streams stub)", "impl", cfg.PubSub)
+	}
 
 	// ---- Build the dependency graph: pool -> repos -> service -> handlers ----
 
