@@ -11,17 +11,12 @@ type Message struct {
 	Payload []byte // opaque; pubsub does not interpret
 }
 
-// Sentinel errors.
-var (
-	// ErrClosed is returned by Publish/Subscribe/Unsubscribe after Close.
-	ErrClosed = errors.New("pubsub: closed")
-
-	// ErrNotImplemented is returned by stub backends (e.g. Streams pre-M-later).
-	ErrNotImplemented = errors.New("pubsub: not implemented")
-)
+// ErrClosed is returned by Publish/Subscribe/Unsubscribe after Close.
+var ErrClosed = errors.New("pubsub: closed")
 
 // PubSub is the abstraction the gateway and dispatcher use to move events
-// between processes. Implementations: RedisPubSub (live), StreamsPubSub (stub).
+// between processes. Current implementation: RedisPubSub. Alternatives
+// (e.g. Redis Streams) can be added behind this interface when needed.
 //
 // All methods are safe for concurrent use.
 type PubSub interface {

@@ -1,0 +1,3 @@
+N + 1 queries
+
+https://www.reddit.com/r/programming/comments/1qwkuh4/optimistic_vs_pessimistic_locking_concurrency/

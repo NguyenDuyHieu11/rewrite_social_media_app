@@ -1,16 +1,12 @@
-// Package handlers contains HTTP handlers for the gateway and dispatcher.
-//
-// This file implements the home-feed SSE surface (M9). Chat WebSocket
-// handlers will live alongside these in a later milestone.
 package handlers
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/events"
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/feed"
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/httputil"
 	mw "github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/middleware"
@@ -19,8 +15,8 @@ import (
 )
 
 // SSEHandler serves long-lived Server-Sent Event streams for post subscriptions.
-// It depends on feed.Hub for Redis + in-memory wiring and does not publish events
-// (publishing is the dispatcher's job in M10).
+// It depends on feed.Hub for Redis + in-memory wiring. Publishing is the
+// dispatcher's job; this handler only delivers.
 type SSEHandler struct {
 	hub *feed.Hub
 	log *slog.Logger
@@ -37,27 +33,13 @@ func NewSSEHandler(hub *feed.Hub, log *slog.Logger) *SSEHandler {
 //
 //	PUT /sse/posts/{postID}/subscriptions
 //
-// Requires authentication (Bearer or access_token query — see queryTokenAsBearer).
-// The parent router must mount mw.RequireAuth before this sub-router.
+// Requires authentication. Bearer or ?access_token= both work: the gateway
+// mounts mw.QueryTokenAsBearer before mw.Auth, so by the time this router
+// runs, claims are already on the context and RequireAuth has passed.
 func (h *SSEHandler) Routes() chi.Router {
 	r := chi.NewRouter()
-	r.Use(queryTokenAsBearer)
 	r.Put("/posts/{postID}/subscriptions", h.SubscribePost)
 	return r
-}
-
-// queryTokenAsBearer copies ?access_token= into Authorization: Bearer for
-// browsers using EventSource, which cannot set custom headers. If Authorization
-// is already set, the query param is ignored.
-func queryTokenAsBearer(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") == "" {
-			if t := r.URL.Query().Get("access_token"); t != "" {
-				r.Header.Set("Authorization", "Bearer "+t)
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 // SubscribePost opens an SSE stream for one post.
@@ -140,35 +122,12 @@ func (h *SSEHandler) SubscribePost(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			eventType, data := splitEvent(payload)
+			// Bus payloads are events.Envelope JSON published by the
+			// dispatcher; Split recovers the SSE event type and data.
+			eventType, data := events.Split(payload)
 			if err := sse.WriteEvent(w, eventType, data); err != nil {
 				return
 			}
 		}
 	}
-}
-
-// splitEvent maps opaque Redis payloads to SSE event type + data bytes.
-//
-// Convention (agreed with dispatcher M10):
-//   - "comment:{json}"  → event comment, data {json}
-//   - "reaction:{json}" → event reaction, data {json}
-//   - valid JSON alone  → event message, data as-is
-//   - anything else     → event message, data as-is
-//
-// Publishers should use the prefixed form when the client listens for typed
-// events (EventSource addEventListener("comment", ...)).
-func splitEvent(payload []byte) (eventType string, data []byte) {
-	const prefixComment = "comment:"
-	const prefixReaction = "reaction:"
-	if len(payload) > len(prefixComment) && string(payload[:len(prefixComment)]) == prefixComment {
-		return "comment", payload[len(prefixComment):]
-	}
-	if len(payload) > len(prefixReaction) && string(payload[:len(prefixReaction)]) == prefixReaction {
-		return "reaction", payload[len(prefixReaction):]
-	}
-	if json.Valid(payload) {
-		return "message", payload
-	}
-	return "message", payload
 }

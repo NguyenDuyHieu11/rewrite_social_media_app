@@ -8,9 +8,7 @@
 // Naming convention:
 //
 //	post:{uuid}   — home-feed events for one post (comments, reactions, etc.)
-//
-// Chat domain channels (room:{id}) will be added in a later milestone when
-// WebSocket messaging is implemented.
+//	room:{id}     — chat events for one room (WebSocket domain)
 package channels
 
 import "fmt"
@@ -21,8 +19,13 @@ import "fmt"
 //
 // Example: PostChannel("550e8400-e29b-41d4-a716-446655440000") → "post:550e8400-..."
 //
-// Publishers (dispatcher, after M10) and subscribers (gateway feed.Hub) must
-// both use this helper so messages route correctly.
+// Publishers (dispatcher) and subscribers (gateway feed.Hub) must both use
+// this helper so messages route correctly.
 func PostChannel(postID string) string {
 	return fmt.Sprintf("post:%s", postID)
+}
+
+// RoomChannel returns the Redis channel name for real-time chat events in a room.
+func RoomChannel(roomID string) string {
+	return fmt.Sprintf("room:%s", roomID)
 }

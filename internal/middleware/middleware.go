@@ -46,10 +46,12 @@ func RequestIDFromContext(ctx context.Context) string {
 	return v
 }
 
+// statusRecorder embeds http.ResponseWriter so it satisfies the interface
+// (Header etc. are promoted) while intercepting WriteHeader/Write.
 type statusRecorder struct {
+	http.ResponseWriter
 	bytes  int
 	status int
-	http.ResponseWriter
 }
 
 // WriteHeader observes the status the handler chose. http.ResponseWriter
@@ -70,6 +72,13 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Flush forwards to the underlying ResponseWriter so SSE handlers can stream.
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func Logger(log func(r *http.Request, status, bytes int, dur time.Duration)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +91,21 @@ func Logger(log func(r *http.Request, status, bytes int, dur time.Duration)) fun
 }
 
 // auth
+
+// QueryTokenAsBearer copies ?access_token= into Authorization: Bearer for
+// browsers using EventSource, which cannot set custom headers. It must run
+// BEFORE Auth so the copied header is visible when claims are parsed. If
+// Authorization is already set, the query param is ignored.
+func QueryTokenAsBearer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			if t := r.URL.Query().Get("access_token"); t != "" {
+				r.Header.Set("Authorization", "Bearer "+t)
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func Auth(secret []byte) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

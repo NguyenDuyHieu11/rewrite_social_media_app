@@ -52,16 +52,16 @@ import (
 // gateway instance. Safe for concurrent use.
 type Hub struct {
 	mu    sync.Mutex
-	bus   pubsub.PubSub           // upstream: Redis (or test double)
-	store *subscription.Store     // downstream: per-browser delivery channels
-	posts map[string]*postEntry   // postID -> active bridge state
+	bus   pubsub.PubSub         // upstream: Redis (or test double)
+	store *subscription.Store   // postID → connectionID → subscription.
+	posts map[string]*postEntry // postID -> active bridge state
 }
 
 // postEntry holds Redis subscription state for one post on this gateway.
 type postEntry struct {
-	refs   int                      // open SSE connections for this post
-	redis  <-chan pubsub.Message    // receive-only; identity for bus.Unsubscribe
-	cancel context.CancelFunc       // stops the bridge goroutine
+	refs   int                   // open SSE connections for this post
+	redis  <-chan pubsub.Message // receive-only; identity for bus.Unsubscribe
+	cancel context.CancelFunc    // stops the bridge goroutine
 }
 
 // NewHub wires a PubSub bus and subscription store. Neither may be nil.

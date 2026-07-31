@@ -45,36 +45,18 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// ---- Redis + pub/sub (publish path; handlers will use this in later milestones) ----
+	// ---- Redis + pub/sub (publish side of the realtime path) ----
 
-	var bus pubsub.PubSub
-	switch cfg.PubSub {
-	case config.PubSubRedis:
-		redisClient, err := redisclient.New(ctx, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
-		if err != nil {
-			log.Error("failed to connect to redis", "error", err)
-			os.Exit(1)
-		}
-		defer redisClient.Close()
-
-		bus, err = pubsub.New(cfg.PubSub, redisClient)
-		if err != nil {
-			log.Error("failed to init pubsub", "error", err)
-			os.Exit(1)
-		}
-		defer bus.Close()
-
-		log.Info("redis and pubsub ready", "impl", cfg.PubSub)
-	case config.PubSubStreams:
-		var err error
-		bus, err = pubsub.New(cfg.PubSub, nil)
-		if err != nil {
-			log.Error("failed to init pubsub", "error", err)
-			os.Exit(1)
-		}
-		defer bus.Close()
-		log.Info("pubsub ready (streams stub)", "impl", cfg.PubSub)
+	redisClient, err := redisclient.New(ctx, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	if err != nil {
+		log.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
 	}
+	defer redisClient.Close()
+
+	bus := pubsub.NewRedis(redisClient)
+	defer bus.Close()
+	log.Info("redis and pubsub ready")
 
 	// ---- Build the dependency graph: pool -> repos -> service -> handlers ----
 
@@ -88,14 +70,19 @@ func main() {
 
 	usersRepo := repository.NewUsersRepository(pool)
 	tokensRepo := repository.NewRefreshTokensRepository(pool)
+	postsRepo := repository.NewPostsRepository(pool)
+	commentsRepo := repository.NewCommentsRepository(pool)
+	reactionsRepo := repository.NewReactionsRepository(pool)
 
 	authService := services.NewAuthService(usersRepo, tokensRepo, services.AuthConfig{
 		JWTSecret:  cfg.JWTSecret,
 		AccessTTL:  cfg.JWTAccessTTL,
 		RefreshTTL: cfg.JWTRefreshTTL,
 	})
+	feedService := services.NewFeedService(postsRepo, commentsRepo, reactionsRepo, bus, log)
 
 	authHandler := handlers.NewAuthHandler(authService)
+	feedHandler := handlers.NewFeedHandler(feedService)
 
 	// ---- Router ----
 
@@ -119,6 +106,11 @@ func main() {
 	})
 
 	r.Mount("/auth", authHandler.Routes())
+
+	r.Group(func(r chi.Router) {
+		r.Use(mw.RequireAuth)
+		r.Mount("/posts", feedHandler.Routes())
+	})
 
 	// ---- HTTP server with graceful shutdown ----
 

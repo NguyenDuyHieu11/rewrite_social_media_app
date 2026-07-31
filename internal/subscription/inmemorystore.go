@@ -42,7 +42,7 @@ type Event = []byte
 
 type subscription struct {
 	userID string
-	ch     chan Event
+	ch     chan Event // type Event = []byte
 }
 
 // Store holds all active real-time subscriptions on this gateway.

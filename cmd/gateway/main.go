@@ -42,36 +42,18 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	var bus pubsub.PubSub
-	switch cfg.PubSub {
-	case config.PubSubRedis:
-		redisClient, err := redisclient.New(ctx, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
-		if err != nil {
-			log.Error("failed to connect to redis", "error", err)
-			os.Exit(1)
-		}
-		defer redisClient.Close()
-
-		bus, err = pubsub.New(cfg.PubSub, redisClient)
-		if err != nil {
-			log.Error("failed to init pubsub", "error", err)
-			os.Exit(1)
-		}
-		defer bus.Close()
-		log.Info("redis and pubsub ready", "impl", cfg.PubSub)
-
-	case config.PubSubStreams:
-		var err error
-		bus, err = pubsub.New(cfg.PubSub, nil)
-		if err != nil {
-			log.Error("failed to init pubsub", "error", err)
-			os.Exit(1)
-		}
-		defer bus.Close()
-		log.Info("pubsub ready (streams stub)", "impl", cfg.PubSub)
+	redisClient, err := redisclient.New(ctx, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	if err != nil {
+		log.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
 	}
+	defer redisClient.Close()
 
-	// Home-feed real-time path (M9): in-memory fan-out + Redis bridge per post.
+	bus := pubsub.NewRedis(redisClient)
+	defer bus.Close()
+	log.Info("redis and pubsub ready")
+
+	// Home-feed realtime: in-memory fan-out + Redis bridge per post.
 	// Hub refcount drives SUBSCRIBE/UNSUBSCRIBE; store holds per-browser channels.
 	store := subscription.New()
 	hub := feed.NewHub(bus, store)
@@ -91,6 +73,9 @@ func main() {
 			"request_id", mw.RequestIDFromContext(req.Context()),
 		)
 	}))
+	// QueryTokenAsBearer must precede Auth: EventSource clients can only pass
+	// the JWT via ?access_token=, and Auth reads the Authorization header.
+	r.Use(mw.QueryTokenAsBearer)
 	r.Use(mw.Auth(cfg.JWTSecret))
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
