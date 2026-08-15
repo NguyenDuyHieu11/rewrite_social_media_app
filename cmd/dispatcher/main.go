@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/config"
-	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/db"
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/handlers"
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/httputil"
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/logger"
@@ -22,6 +21,7 @@ import (
 	"github.com/NguyenDuyHieu11/rewrite_social_media_app/internal/services"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const serviceName = "dispatcher"
@@ -60,7 +60,7 @@ func main() {
 
 	// ---- Build the dependency graph: pool -> repos -> service -> handlers ----
 
-	pool, err := db.NewPool(ctx, cfg.PostgresDSN)
+	pool, err := pgxpool.New(ctx, cfg.PostgresDSN)
 	if err != nil {
 		log.Error("failed to connect to postgres", "error", err)
 		os.Exit(1)

@@ -13,3 +13,17 @@
 Thumbs.db
 
 /.data/
+
+# Local notes, prompts, and design docs (not part of the app)
+ProblemToTackle.txt
+Project_Reform__Design_&_Scalability_Audit.md
+RWMutex_cheat_sheet.txt
+cursor_prompt (1).md
+
+# Cursor / SpecStory local tooling
+.specstory/
+.cursorindexingignore
+
+# Built binaries checked into cmd/
+# cmd/dispatcher/dispatcher
+# cmd/gateway/gateway

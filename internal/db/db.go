@@ -1,47 +1,22 @@
-package db
+package database
 
 import (
-	"context"
 	"fmt"
-	"time"
+	"log"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/driver/postgres" // Or gorm.io/driver/mysql, gorm.io/driver/sqlserver
+	"gorm.io/gorm"
 )
 
-const (
-	defaultMaxConns        = int32(20)
-	defaultMinConns        = int32(2)
-	defaultMaxConnIdleTime = 5 * time.Minute
-	defaultMaxConnLifetime = 30 * time.Minute
-	defaultHealthCheck     = 1 * time.Minute
-	defaultPingTimeout     = 5 * time.Second
-)
+func InitDB() *gorm.DB {
+	// Adjust connection string for your database engine
+	dsn := "host=localhost user=postgres password=yourpassword dbname=social_app_db port=5432 sslmode=disable"
 
-func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
-	cfg, err := pgxpool.ParseConfig(dsn)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		return nil, fmt.Errorf("parse postgres dsn: %w", err)
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// Sane defaults for local dev and small services.
-	cfg.MaxConns = defaultMaxConns
-	cfg.MinConns = defaultMinConns
-	cfg.MaxConnIdleTime = defaultMaxConnIdleTime
-	cfg.MaxConnLifetime = defaultMaxConnLifetime
-	cfg.HealthCheckPeriod = defaultHealthCheck
-
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("create postgres pool: %w", err)
-	}
-
-	pingCtx, cancel := context.WithTimeout(ctx, defaultPingTimeout)
-	defer cancel()
-
-	err = pool.Ping(pingCtx)
-	if err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("ping postgres: %w", err)
-	}
-	return pool, nil
+	fmt.Println("Database connection established.")
+	return db
 }
